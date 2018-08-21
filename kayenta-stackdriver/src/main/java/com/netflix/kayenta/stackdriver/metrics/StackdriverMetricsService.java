@@ -27,8 +27,8 @@ import com.google.api.services.monitoring.v3.model.TimeSeries;
 import com.netflix.kayenta.canary.CanaryConfig;
 import com.netflix.kayenta.canary.CanaryMetricConfig;
 import com.netflix.kayenta.canary.CanaryScope;
-import com.netflix.kayenta.canary.providers.QueryConfigUtils;
-import com.netflix.kayenta.canary.providers.StackdriverCanaryMetricSetQueryConfig;
+import com.netflix.kayenta.canary.providers.metrics.QueryConfigUtils;
+import com.netflix.kayenta.canary.providers.metrics.StackdriverCanaryMetricSetQueryConfig;
 import com.netflix.kayenta.google.security.GoogleNamedAccountCredentials;
 import com.netflix.kayenta.metrics.MetricSet;
 import com.netflix.kayenta.metrics.MetricsService;
@@ -112,6 +112,8 @@ public class StackdriverMetricsService implements MetricsService {
     String location = stackdriverCanaryScope.getLocation();
     String scope = stackdriverCanaryScope.getScope();
     String resourceType = stackdriverCanaryScope.getResourceType();
+    String crossSeriesReducer = stackdriverCanaryScope.getCrossSeriesReducer();
+    String perSeriesAligner = stackdriverCanaryScope.getPerSeriesAligner();
 
     if (StringUtils.isEmpty(projectId)) {
       projectId = stackdriverCredentials.getProject();
@@ -201,8 +203,30 @@ public class StackdriverMetricsService implements MetricsService {
             }
           }
         }
+      } else if ("gke_container".equals(resourceType)) {
+        filter += " AND project=" + projectId;
+        Map<String, String> extendedScopeParams = stackdriverCanaryScope.getExtendedScopeParams();
+
+        if (extendedScopeParams != null) {
+          List<String> resourceLabelKeys = Arrays.asList("cluster_name", "namespace_id", "instance_id", "pod_id", "container_name", "zone");
+
+          for (String resourceLabelKey : resourceLabelKeys) {
+            if (extendedScopeParams.containsKey(resourceLabelKey)) {
+              filter += " AND resource.labels." + resourceLabelKey + "=" + extendedScopeParams.get(resourceLabelKey);
+            }
+          }
+
+          for (String extendedScopeParamsKey : extendedScopeParams.keySet()) {
+            if (extendedScopeParamsKey.startsWith("user_labels.")) {
+              String userLabelKey = extendedScopeParamsKey.substring(12);
+
+              filter += " AND metadata.user_labels.\"" + userLabelKey + "\"=\"" + extendedScopeParams.get(extendedScopeParamsKey) + "\"";
+            }
+          }
+        }
       } else if (!"global".equals(resourceType)) {
-        throw new IllegalArgumentException("Resource type '" + resourceType + "' not yet supported.");
+        throw new IllegalArgumentException("Resource type '" + resourceType + "' not yet explicitly supported. If you employ a " +
+          "custom filter, you may use any resource type you like.");
       }
     } else {
       filter += " AND " + customFilter;
@@ -216,8 +240,8 @@ public class StackdriverMetricsService implements MetricsService {
       .timeSeries()
       .list("projects/" + stackdriverCredentials.getProject())
       .setAggregationAlignmentPeriod(alignmentPeriodSec + "s")
-      .setAggregationCrossSeriesReducer("REDUCE_MEAN")
-      .setAggregationPerSeriesAligner("ALIGN_MEAN")
+      .setAggregationCrossSeriesReducer(crossSeriesReducer)
+      .setAggregationPerSeriesAligner(perSeriesAligner)
       .setFilter(filter)
       .setIntervalStartTime(stackdriverCanaryScope.getStart().toString())
       .setIntervalEndTime(stackdriverCanaryScope.getEnd().toString());
@@ -280,6 +304,11 @@ public class StackdriverMetricsService implements MetricsService {
         : stackdriverCanaryScope.getStart();
       long responseStartTimeMillis = responseStartTimeInstant.toEpochMilli();
 
+      Instant responseEndTimeInstant =
+        points.size() > 0
+          ? Instant.parse(points.get(points.size() - 1).getInterval().getEndTime())
+          : stackdriverCanaryScope.getEnd();
+
       // TODO(duftler): What if there are no data points?
       List<Double> pointValues =
         points
@@ -292,6 +321,8 @@ public class StackdriverMetricsService implements MetricsService {
           .name(canaryMetricConfig.getName())
           .startTimeMillis(responseStartTimeMillis)
           .startTimeIso(responseStartTimeInstant.toString())
+          .endTimeMillis(responseEndTimeInstant.toEpochMilli())
+          .endTimeIso(responseEndTimeInstant.toString())
           .stepMillis(alignmentPeriodSec * 1000)
           .values(pointValues);
 
@@ -307,6 +338,8 @@ public class StackdriverMetricsService implements MetricsService {
       }
 
       metricSetBuilder.attribute("query", filter);
+      metricSetBuilder.attribute("crossSeriesReducer", crossSeriesReducer);
+      metricSetBuilder.attribute("perSeriesAligner", perSeriesAligner);
 
       metricSetList.add(metricSetBuilder.build());
     }

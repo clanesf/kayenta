@@ -19,7 +19,7 @@ package com.netflix.kayenta.datadog.metrics;
 import com.netflix.kayenta.canary.CanaryConfig;
 import com.netflix.kayenta.canary.CanaryMetricConfig;
 import com.netflix.kayenta.canary.CanaryScope;
-import com.netflix.kayenta.canary.providers.DatadogCanaryMetricSetQueryConfig;
+import com.netflix.kayenta.canary.providers.metrics.DatadogCanaryMetricSetQueryConfig;
 import com.netflix.kayenta.datadog.security.DatadogCredentials;
 import com.netflix.kayenta.datadog.security.DatadogNamedAccountCredentials;
 import com.netflix.kayenta.datadog.service.DatadogRemoteService;
@@ -91,6 +91,8 @@ public class DatadogMetricsService implements MetricsService {
           .name(canaryMetricConfig.getName())
           .startTimeMillis(series.getStart())
           .startTimeIso(Instant.ofEpochMilli(series.getStart()).toString())
+          .endTimeMillis(series.getEnd())
+          .endTimeIso(Instant.ofEpochMilli(series.getEnd()).toString())
           .stepMillis(series.getInterval() * 1000)
           .values(series.getDataPoints().collect(Collectors.toList()))
           .build()

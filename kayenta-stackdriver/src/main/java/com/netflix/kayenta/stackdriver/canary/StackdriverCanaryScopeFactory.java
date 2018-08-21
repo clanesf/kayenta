@@ -18,7 +18,7 @@ package com.netflix.kayenta.stackdriver.canary;
 
 import com.netflix.kayenta.canary.CanaryScope;
 import com.netflix.kayenta.canary.CanaryScopeFactory;
-import com.netflix.kayenta.canary.providers.StackdriverCanaryMetricSetQueryConfig;
+import com.netflix.kayenta.canary.providers.metrics.StackdriverCanaryMetricSetQueryConfig;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -49,6 +49,14 @@ public class StackdriverCanaryScopeFactory implements CanaryScopeFactory {
       }
 
       stackdriverCanaryScope.setResourceType(extendedScopeParams.getOrDefault("resourceType", "gce_instance"));
+
+      if (extendedScopeParams.containsKey("crossSeriesReducer")) {
+        stackdriverCanaryScope.setCrossSeriesReducer(extendedScopeParams.get("crossSeriesReducer"));
+      }
+
+      if (extendedScopeParams.containsKey("perSeriesAligner")) {
+        stackdriverCanaryScope.setPerSeriesAligner(extendedScopeParams.get("perSeriesAligner"));
+      }
     }
 
     return stackdriverCanaryScope;
